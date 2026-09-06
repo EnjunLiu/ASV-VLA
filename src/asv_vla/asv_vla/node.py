@@ -102,7 +102,7 @@ def main() -> None:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--detection-period", type=float, default=0.5)
     parser.add_argument("--sim-time", action=argparse.BooleanOptionalAction, default=True)
-    args = parser.parse_args()
+    args, ros_args = parser.parse_known_args()
 
     for required in (Path(args.weights), Path(args.qwen_embed), Path(args.hf_home)):
         if not required.exists():
@@ -128,7 +128,7 @@ def main() -> None:
     from rclpy.parameter import Parameter
     from sensor_msgs.msg import Image, Imu
 
-    rclpy.init()
+    rclpy.init(args=ros_args)
     node = rclpy.create_node(
         "asv_vla",
         parameter_overrides=[Parameter("use_sim_time", Parameter.Type.BOOL, args.sim_time)],
