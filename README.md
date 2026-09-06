@@ -42,17 +42,18 @@ is not redefined by either backend.
 - `src/bringup/`: one launch entry point for both backends.
 - `fastdds.xml`: DDS configuration for the distributed Jetson/Isaac deployment.
 
-Model assets are intentionally external to Git. Place the deployed actor,
-`qwen_task_embed.npz` and Hugging Face cache under
-`~/.local/share/asv-vla/models`, or set `ASV_VLA_MODEL_DIR`.
+Model assets are stored locally under the workspace-level ignored `models/`
+directory, so the Jetson folder is a self-contained runtime while weights remain
+outside GitHub. It contains the deployed actor, `qwen_task_embed.npz` and the
+Hugging Face cache under `models/hf/`. Set `ASV_VLA_MODEL_DIR` only to override
+that project-local default.
 
 ## Build and run
 
 ```bash
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install
-source install/setup.bash
-ros2 launch bringup vla.launch.py backend:=isaac color:=red standoff:=4
+./run_vla.sh backend:=isaac color:=red standoff:=4
 ```
 
 For Unreal Engine, set `backend:=ue` and provide `execution_address` when the

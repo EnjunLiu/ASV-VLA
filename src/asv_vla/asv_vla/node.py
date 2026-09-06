@@ -29,7 +29,7 @@ MAX_EXPOSURE_GAIN = 8.0
 
 
 def _model_root() -> Path:
-    return Path(os.environ.get("ASV_VLA_MODEL_DIR", Path.home() / ".local/share/asv-vla/models"))
+    return Path(os.environ.get("ASV_VLA_MODEL_DIR", Path.cwd() / "models"))
 
 
 def _sensor_qos(reliable=False):
@@ -106,7 +106,7 @@ def main() -> None:
 
     for required in (Path(args.weights), Path(args.qwen_embed), Path(args.hf_home)):
         if not required.exists():
-            raise SystemExit(f"runtime model asset missing outside workspace: {required}")
+            raise SystemExit(f"runtime model asset missing: {required}")
 
     blob = np.load(args.qwen_embed)
     key = f"{args.color}_{int(round(args.standoff))}"

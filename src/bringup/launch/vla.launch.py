@@ -1,6 +1,7 @@
 import os
+from pathlib import Path
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
@@ -9,9 +10,10 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    workspace = Path(get_package_prefix("bringup")).resolve().parents[1]
     model_dir = os.environ.get(
         "ASV_VLA_MODEL_DIR",
-        os.path.expanduser("~/.local/share/asv-vla/models"),
+        str(workspace / "models"),
     )
     bridge_config = os.path.join(
         get_package_share_directory("bridge"), "config", "ue_bridge.yaml"
