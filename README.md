@@ -1,0 +1,62 @@
+# ASV-VLA
+
+ROS 2 deployment workspace for task-conditioned visual target following on
+Jetson Orin Nano. The runtime turns a camera stream and vessel state into a
+body-frame desired displacement while keeping perception, tracking and policy
+inference outside the low-level controller.
+
+## Runtime pipeline
+
+1. OWL-ViT detects task-relevant vessels from the live RGB stream.
+2. A Kalman tracker maintains identity and body-frame position/velocity through
+   intermittent detections.
+3. A semantic set actor combines per-entity OWL appearance features with a
+   Qwen3 task embedding, selects the target and predicts a two-dimensional
+   body-frame displacement.
+4. Range-aware safety gating, action limiting and target-loss handling validate
+   the command before it is published on `/espapp/input`.
+
+The actor is rotation-equivariant in the horizontal plane and accepts an
+unordered set of tracked entities. Target identity is retained explicitly so a
+brief occlusion cannot silently transfer control to a similar distractor.
+
+## Backends
+
+- **Isaac Sim:** subscribes to `/asv/camera/image_raw`, `/asv/imu` and
+  `/asv/state_estimate`.
+- **Unreal Engine:** the included C++ TCP bridge converts Unreal camera and
+  vessel-state packets to `/ue/camera_frame` and `/ue/asv_state`. It also sends
+  the resulting command back to Unreal when that backend is used, avoiding a
+  native ROS dependency inside UE.
+
+Both paths publish the same existing `interfaces/msg/Input` message on
+`/espapp/input`: simulation timestamp, desired body-frame `x/y`, measured
+`u/v/r` and a validity flag. The message contract is shared with ASV-Control and
+is not redefined by either backend.
+
+## Workspace
+
+- `src/asv_vla/`: perception adapters, Kalman tracking and semantic actor runtime.
+- `src/bridge/`: bidirectional Unreal TCP/ROS 2 bridge.
+- `src/interfaces/`: ROS 2 messages used at the deployment boundary.
+- `src/bringup/`: one launch entry point for both backends.
+- `fastdds.xml`: DDS configuration for the distributed Jetson/Isaac deployment.
+
+Model assets are intentionally external to Git. Place the deployed actor,
+`qwen_task_embed.npz` and Hugging Face cache under
+`~/.local/share/asv-vla/models`, or set `ASV_VLA_MODEL_DIR`.
+
+## Build and run
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch bringup vla.launch.py backend:=isaac color:=red standoff:=4
+```
+
+For Unreal Engine, set `backend:=ue` and provide `execution_address` when the
+Unreal host is not resolved by the bridge configuration.
+
+The repository contains deployment code only: generated ROS workspaces, model
+artifacts, datasets, experiment logs and offline learning pipelines are excluded.

@@ -1,0 +1,9 @@
+int64 stamp_us
+string run_id
+int64 scene_seed
+uint64 frame_index
+string frame_id
+EntityState[] entities
+bool valid
+string detail
+string source

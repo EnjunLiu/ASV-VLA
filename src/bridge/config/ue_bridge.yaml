@@ -1,0 +1,39 @@
+bridge_node:
+  ros__parameters:
+    listen_address: "0.0.0.0"
+    port: 8080
+    terminator: "__OD_END__"
+
+    # UE5：厘米转米、厘米/秒转米/秒，角速度已是弧度/秒。
+    ue_length_scale: 0.01
+    yaw_rate_scale: 1.0
+    yaw_rate_sign: 1.0
+
+    # UE5 相对实体坐标为 ASV 局部坐标系中的厘米。
+    # UE +Y 向右，ROS base_link +Y 向左。
+    entity_frame_id: "base_link"
+    entity_lateral_sign: -1.0
+    entity_vertical_sign: 1.0
+    max_entities: 64
+
+    # 宽高从 JPEG 头解析。
+    camera_encoding: "jpeg"
+    max_camera_bytes: 8388608
+
+    log_raw_json: false
+
+    # 将 UE5 游戏时间（秒）作为 ROS 2 /clock 来源发布。
+    publish_clock: true
+
+    # 兼容旧 /control/desired_displacement，并把既有 /espapp/input 直接转成 UE 运动学期望。
+    # 这只用于 UE 缺少原生 ROS/推进器执行链的场景；Isaac 与实船仍由独立底控执行。
+    outbound_command_mode: "kinematic"
+
+    # ROS base_link 米转 UE actor 局部厘米。ROS +Y 向左、UE +Y 向右，输出横向符号为负。
+    kinematic_position_scale: 100.0
+    kinematic_lateral_sign: -1.0
+
+    # 可选 UE5 C++ 运动学执行器（无头闭环）：设置后通过 EDGE 执行器套接字发送，
+    # 不走蓝图通道（无头模式下蓝图会忽略该命令）。
+    execution_address: ""
+    execution_port: 8081
