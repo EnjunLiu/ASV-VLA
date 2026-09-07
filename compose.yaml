@@ -1,0 +1,34 @@
+services:
+  asv-vla:
+    image: asv-vla:jetson-r36.4
+    build:
+      context: .
+      args:
+        BASE_IMAGE: nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,192.168.137.0/24}
+    runtime: nvidia
+    network_mode: host
+    ipc: host
+    init: true
+    shm_size: 1gb
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_LOCALHOST_ONLY: "0"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+      ASV_VLA_MODEL_DIR: /opt/asv_vla/models
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      TRANSFORMERS_NO_TF: "1"
+    volumes:
+      - ./models:/opt/asv_vla/models:ro
+    command:
+      - ros2
+      - launch
+      - bringup
+      - vla.launch.py
+      - backend:=${ASV_BACKEND:-isaac}
+      - color:=${ASV_COLOR:-red}
+      - standoff:=${ASV_STANDOFF:-4}
+      - device:=cuda

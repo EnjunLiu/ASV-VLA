@@ -59,5 +59,36 @@ colcon build --symlink-install
 For Unreal Engine, set `backend:=ue` and provide `execution_address` when the
 Unreal host is not resolved by the bridge configuration.
 
+## Docker deployment on Jetson
+
+The deployment image targets Jetson Linux R36.4 on ARM64. It layers NVIDIA's
+Jetson CUDA 12.6 runtime, cuDNN and the matching NVIDIA PyTorch wheel instead of
+shipping unrelated training tools. Build it directly on the Jetson:
+
+```bash
+docker compose build
+docker compose run --rm asv-vla python3 -c \
+  'import torch; assert torch.cuda.is_available(); print(torch.__version__)'
+docker compose up asv-vla
+```
+
+`compose.yaml` uses the NVIDIA runtime and host networking so ROS 2 DDS and the
+UE TCP ports retain their existing contracts. The ignored workspace `models/`
+directory is mounted read-only at `/opt/asv_vla/models`; weights are neither
+copied into the image nor sent in the Docker build context.
+
+Select a backend and task without rebuilding:
+
+```bash
+ASV_BACKEND=isaac ASV_COLOR=blue ASV_STANDOFF=3 docker compose up asv-vla
+docker compose run --rm asv-vla ros2 launch bringup vla.launch.py \
+  backend:=ue color:=red standoff:=4 device:=cuda \
+  execution_address:=192.168.137.1 execution_port:=8081
+```
+
+The native `colcon` workflow remains supported. Docker is the reproducible
+deployment path; it does not change ROS messages, topic semantics or policy
+behavior.
+
 The repository contains deployment code only: generated ROS workspaces, model
 artifacts, datasets, experiment logs and offline learning pipelines are excluded.
