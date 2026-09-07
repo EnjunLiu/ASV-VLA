@@ -7,6 +7,8 @@ Letterbox to 768, recall queries boat/ship/obstacle, rho from the task sentence.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
+from pathlib import Path
 
 import numpy as np
 
@@ -28,9 +30,8 @@ ISAAC_ASV_HEIGHT_RANGE_SCALE = 192.0
 
 
 def default_hf_home() -> str:
-    import os
-
-    return os.environ.get("OWL_CACHE") or os.environ.get("HF_HOME") or r"E:\hil-platform\weights\hf"
+    workspace_cache = Path(__file__).resolve().parents[4] / "models" / "hf"
+    return os.environ.get("OWL_CACHE") or os.environ.get("HF_HOME") or str(workspace_cache)
 
 
 HF_HOME = default_hf_home()

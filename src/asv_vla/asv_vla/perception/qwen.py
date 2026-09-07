@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import numpy as np
 
 QWEN_ID = "Qwen/Qwen3-Embedding-0.6B"
 INSTRUCT = "Represent the navigation task for an unmanned surface vehicle."
 EMBED_DIM = 64  # probe 3.1: 32-d R^2=0.75, 64-d R^2=0.91
-HF_HOME = r"E:\hil-platform\weights\hf"
+
+
+def default_hf_home() -> str:
+    workspace_cache = Path(__file__).resolve().parents[4] / "models" / "hf"
+    return os.environ.get("HF_HOME") or str(workspace_cache)
+
+
+HF_HOME = default_hf_home()
 
 
 def format_query(task_text: str) -> str:
