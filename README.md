@@ -10,9 +10,11 @@ inference outside the low-level controller.
 1. OWL-ViT detects task-relevant vessels from the live RGB stream.
 2. A Kalman tracker maintains identity and body-frame position/velocity through
    intermittent detections.
-3. A semantic set actor combines per-entity OWL appearance features with a
-   Qwen3 task embedding, selects the target and predicts a two-dimensional
-   body-frame displacement.
+3. The task-conditioned semantic set actor combines per-entity OWL appearance features with a
+   precomputed Qwen3 task embedding, selects the target and predicts a
+   two-dimensional body-frame displacement. The task embedding conditions both
+   target selection and two task-conditioned multiplicative gains that modulate
+   the attention value projection and output weights.
 4. Range-aware safety gating, action limiting and target-loss handling validate
    the command before it is published on `/espapp/input`.
 
@@ -45,8 +47,9 @@ is not redefined by either backend.
 Model assets are stored locally under the workspace-level ignored `models/`
 directory, so the Jetson folder is a self-contained runtime while weights remain
 outside GitHub. It contains the deployed actor, `qwen_task_embed.npz` and the
-Hugging Face cache under `models/hf/`. Set `ASV_VLA_MODEL_DIR` only to override
-that project-local default.
+OWL-ViT Hugging Face cache under `models/hf/`. Qwen does not run on Jetson; the
+six supported task embeddings are loaded from the small NPZ file. Set
+`ASV_VLA_MODEL_DIR` only to override that project-local default.
 
 ## Build and run
 
@@ -90,5 +93,6 @@ The native `colcon` workflow remains supported. Docker is the reproducible
 deployment path; it does not change ROS messages, topic semantics or policy
 behavior.
 
-The repository contains deployment code only: generated ROS workspaces, model
-artifacts, datasets, experiment logs and offline learning pipelines are excluded.
+The repository contains one deployment policy path only. Generated ROS
+workspaces, model artifacts, datasets, experiment logs and offline learning
+pipelines are excluded.

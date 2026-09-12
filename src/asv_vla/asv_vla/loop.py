@@ -1,17 +1,19 @@
-"""Runtime perception and policy loop; deliberately contains no controller."""
-
 from __future__ import annotations
 
 import math
 
 import numpy as np
 
-from .perception import Detection, KalmanTracker, owl_to_detections
-from .types import PerceptionTick, SensorState
+from .perception.owl import owl_to_detections
+from .perception.tracker import KalmanTracker
+from .perception.types import Detection
+from .types import SensorState
 
-COLLISION_M = 1.0
+SAFETY_STOP_M = 1.35
+SAFETY_FULL_M = 2.40
 
 
+# 把期望位移的模长限制在 cap 以内
 def _clip_action(ax: float, ay: float, cap: float) -> tuple[float, float]:
     norm = math.hypot(ax, ay)
     if norm <= cap or norm < 1.0e-12:
@@ -20,6 +22,7 @@ def _clip_action(ax: float, ay: float, cap: float) -> tuple[float, float]:
     return float(ax) * scale, float(ay) * scale
 
 
+# 靠近目标时削掉朝目标走的位移
 def _limit_inward_action(ax: float, ay: float, target_xy, stop=1.35, full=2.40):
     px, py = float(target_xy[0]), float(target_xy[1])
     distance = math.hypot(px, py)
@@ -34,12 +37,14 @@ def _limit_inward_action(ax: float, ay: float, target_xy, stop=1.35, full=2.40):
     return float(ax) - removed * ux, float(ay) - removed * uy
 
 
+# 感知-策略闭环
 class PerceptionLoop:
     def __init__(self, actor) -> None:
         self.tracker = KalmanTracker()
         self.actor = actor
 
-    def step(self, sensors: SensorState, detections: list[Detection] | None) -> PerceptionTick:
+    # 单拍：更新航迹、求期望位移，再做近距内向限幅
+    def step(self, sensors: SensorState, detections: list[Detection] | None):
         ego_velocity = (float(sensors.surge_velocity), float(sensors.sway_velocity))
         self.tracker.step(
             sensors.t,
@@ -48,15 +53,16 @@ class PerceptionLoop:
             ego_velocity=ego_velocity,
         )
         raw_entities = self.tracker.raw_entity_matrix(ego_velocity=ego_velocity)
+        # 航迹身份只给演员做锁定，不进网络输入
         self.actor.set_track_metadata(
             [track.id for track in self.tracker.tracks],
             [track.misses for track in self.tracker.tracks],
             [track.hits for track in self.tracker.tracks],
         )
-        ax, ay = self.actor(raw_entities, self.actor.task_embed)
-        entities = np.asarray(self.actor.last_entities, dtype=np.float64)
+        ax, ay = self.actor(raw_entities)
         probabilities = np.asarray(self.actor.last_target_probabilities, dtype=np.float64)
         actor_raw = np.asarray(self.actor.last_raw_entities, dtype=np.float64)
+        # 选中真实目标后，近距削掉朝目标走的位移
         if probabilities.size and actor_raw.ndim == 2:
             selected = int(np.argmax(probabilities))
             if selected < len(actor_raw) and probabilities[selected] > self.actor.last_null_probability:
@@ -64,26 +70,14 @@ class PerceptionLoop:
                     ax,
                     ay,
                     actor_raw[selected, :2],
-                    float(getattr(self.actor, "safety_stop_range", 1.35)),
-                    float(getattr(self.actor, "safety_full_range", 2.40)),
+                    SAFETY_STOP_M,
+                    SAFETY_FULL_M,
                 )
         ax, ay = _clip_action(ax, ay, float(self.actor.max_action))
-        image_t = float(sensors.t if sensors.image_stamp is None else sensors.image_stamp)
-        collision = any(math.hypot(float(row[0]), float(row[1])) < COLLISION_M for row in entities)
-        return PerceptionTick(
-            t=float(sensors.t),
-            entities=entities,
-            raw_entities=actor_raw,
-            action=(ax, ay),
-            collision=collision,
-            image_t=image_t,
-            detection_t=(
-                min(float(d.stamp if d.source_stamp is None else d.source_stamp) for d in detections)
-                if detections else None
-            ),
-        )
+        return len(actor_raw), (ax, ay)
 
 
+# 把 OWL 框转成船体坐标系 Detection
 def detections_from_boxes(boxes, sensors: SensorState):
     return owl_to_detections(
         boxes,

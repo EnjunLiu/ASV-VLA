@@ -1,24 +1,18 @@
-"""Perception / tracker types. No Isaac, no ROS."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 import numpy as np
 
-
+# 单帧图像检测结果
 @dataclass
 class Detection:
     x: float
     y: float
-    rho: float = 0.0
-    appearance: np.ndarray | None = None
+    appearance: np.ndarray | None = None # 从 OWL-ViT 内部提取的 512 维图像特征
     stamp: float = 0.0
-    # Timestamp of the source image. ``stamp`` may be translated to the
-    # tracker's local clock, but this value is never rewritten.
-    source_stamp: float | None = None
 
-
+# 连续帧跟踪结果
 @dataclass
 class Track:
     id: int
@@ -27,7 +21,6 @@ class Track:
     vx: float
     vy: float
     P: np.ndarray
-    rho: float = 0.0
     appearance: np.ndarray | None = None
     misses: int = 0
     hits: int = 1
@@ -40,7 +33,6 @@ class Track:
             vx=self.vx,
             vy=self.vy,
             P=np.array(self.P, dtype=np.float64, copy=True),
-            rho=self.rho,
             appearance=None if self.appearance is None else np.array(self.appearance, copy=True),
             misses=self.misses,
             hits=self.hits,

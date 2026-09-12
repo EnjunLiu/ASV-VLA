@@ -19,24 +19,13 @@ add_executable(
   bridge_node
   src/bridge_node.cpp
 )
-if(COMMAND ament_target_dependencies)
-  ament_target_dependencies(
-    bridge_node
-    rclcpp
-    rosgraph_msgs
-    std_msgs
-    interfaces
-  )
-else()
-  # 移除旧辅助函数的 ROS 发行版仍导出包目标；链接这些目标可保留头文件路径和 ABI。
-  target_link_libraries(
-    bridge_node
-    rclcpp::rclcpp
-    rosgraph_msgs::rosgraph_msgs
-    std_msgs::std_msgs
-    interfaces::interfaces
-  )
-endif()
+ament_target_dependencies(
+  bridge_node
+  rclcpp
+  rosgraph_msgs
+  std_msgs
+  interfaces
+)
 target_link_libraries(
   bridge_node
   nlohmann_json::nlohmann_json

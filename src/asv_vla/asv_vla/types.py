@@ -2,26 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
-
-
+# 无人船通过传感器（IMU、GPS等）获取的自身状态数据
 @dataclass
 class SensorState:
     t: float
-    yaw_rate: float = 0.0
-    surge_velocity: float = 0.0
-    sway_velocity: float = 0.0
-    ego_pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    ego_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
-    image_stamp: float | None = None
-
-
-@dataclass
-class PerceptionTick:
-    t: float
-    entities: np.ndarray
-    raw_entities: np.ndarray
-    action: tuple[float, float]
-    collision: bool
-    image_t: float
-    detection_t: float | None
+    yaw_rate: float = 0.0 # 无人船的偏航角速度，可通过 IMU 计算得到
+    surge_velocity: float = 0.0 # 无人船的纵向速度，可通过 GNSS + IMU 计算得到
+    sway_velocity: float = 0.0 # 无人船的横向速度，可通过 GNSS + IMU 计算得到
+    ego_pos: tuple[float, float, float] = (0.0, 0.0, 0.0) # 世界坐标，只用于仿真相关
+    ego_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0) # 世界坐标系下的四元数，只用于仿真相关

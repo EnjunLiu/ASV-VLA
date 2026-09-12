@@ -10,7 +10,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EntityStateArray.msg"
   "msg/CameraFrame.msg"
   "msg/DesiredDisplacement.msg"
-  "msg/TaskEmbedding.msg"
   "msg/Input.msg"
   "msg/Output.msg"
 )

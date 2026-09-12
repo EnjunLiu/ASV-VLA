@@ -49,7 +49,7 @@ def generate_launch_description():
                 "--color", LaunchConfiguration("color"),
                 "--standoff", LaunchConfiguration("standoff"),
                 "--device", LaunchConfiguration("device"),
-                "--weights", [models, "/actor_ppo_semantic16_v14_isaaclab_deploysafe.pt"],
+                "--weights", [models, "/actor_semantic16_deploysafe.pt"],
                 "--qwen-embed", [models, "/qwen_task_embed.npz"],
                 "--hf-home", [models, "/hf"],
             ],

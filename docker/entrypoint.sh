@@ -5,7 +5,7 @@ source "/opt/ros/${ROS_DISTRO}/setup.bash"
 source /opt/asv_vla/install/setup.bash
 set -u
 
-if [[ ! -r "${ASV_VLA_MODEL_DIR}/actor_ppo_semantic16_v14_isaaclab_deploysafe.pt" ]]; then
+if [[ ! -r "${ASV_VLA_MODEL_DIR}/actor_semantic16_deploysafe.pt" ]]; then
     echo "Missing actor weights under ${ASV_VLA_MODEL_DIR}" >&2
     exit 64
 fi

@@ -10,7 +10,6 @@ import argparse
 import math
 import os
 import threading
-import time
 from pathlib import Path
 
 os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
@@ -20,7 +19,6 @@ import numpy as np
 
 from .loop import PerceptionLoop, detections_from_boxes
 from .policy import SemanticTorchActor
-from .tasks import render_task
 from .types import SensorState
 
 DARK_FRAME_MEAN = 40.0
@@ -80,12 +78,12 @@ def _yaw_quaternion(yaw: float):
 def _target_missing(actor, count: int, stale_after: int = 6) -> bool:
     if count <= 0:
         return True
-    misses = getattr(actor, "last_target_misses", None)
+    misses = actor.last_target_misses
     if misses is not None and int(misses) >= stale_after:
         return True
-    probabilities = np.asarray(getattr(actor, "last_target_probabilities", []))
+    probabilities = np.asarray(actor.last_target_probabilities)
     best = float(np.max(probabilities)) if probabilities.size else 0.0
-    null = float(getattr(actor, "last_null_probability", 0.0))
+    null = float(actor.last_null_probability)
     return null >= 0.70 and null > best
 
 
@@ -95,7 +93,7 @@ def main() -> None:
     parser.add_argument("--backend", choices=("isaac", "ue"), default="isaac")
     parser.add_argument("--color", choices=("red", "blue"), default="red")
     parser.add_argument("--standoff", type=float, default=4.0)
-    parser.add_argument("--weights", default=str(models / "actor_ppo_semantic16_v14_isaaclab_deploysafe.pt"))
+    parser.add_argument("--weights", default=str(models / "actor_semantic16_deploysafe.pt"))
     parser.add_argument("--qwen-embed", default=str(models / "qwen_task_embed.npz"))
     parser.add_argument("--hf-home", default=os.environ.get("HF_HOME", str(models / "hf")))
     parser.add_argument("--owl-id", default="google/owlvit-base-patch32")
@@ -113,9 +111,7 @@ def main() -> None:
     if key not in blob.files:
         raise SystemExit(f"task embedding missing: {key}")
     actor = SemanticTorchActor(args.weights, np.asarray(blob[key], dtype=np.float64), args.device)
-    actor.standoff = float(args.standoff)
     loop = PerceptionLoop(actor)
-    task = render_task(args.color, args.standoff)
 
     from .perception.owl import FrozenOwl
 
@@ -175,7 +171,6 @@ def main() -> None:
                 sway_velocity=-vx * math.sin(yaw) + vy * math.cos(yaw),
                 ego_pos=(float(msg.pose.pose.position.x), float(msg.pose.pose.position.y), float(msg.pose.pose.position.z)),
                 ego_quat=quat,
-                image_stamp=image_t,
             )
 
     def on_ue_camera(msg: CameraFrame):
@@ -190,7 +185,6 @@ def main() -> None:
         if not msg.valid:
             return
         with lock:
-            image_t = state["image_t"]
             state["sensors"] = SensorState(
                 t=float(msg.stamp_us) * 1.0e-6,
                 yaw_rate=float(msg.yaw_rate),
@@ -198,7 +192,6 @@ def main() -> None:
                 sway_velocity=0.0,
                 ego_pos=(float(msg.position_x), float(msg.position_y), float(msg.position_z)),
                 ego_quat=_yaw_quaternion(float(msg.yaw)),
-                image_stamp=image_t,
             )
 
     if args.backend == "isaac":
@@ -220,8 +213,8 @@ def main() -> None:
             frame, gain = _recover_dark_frame(np.array(rgb, copy=True))
             with lock:
                 state["scheduled_t"] = float(stamp)
-            boxes = owl.detect_entities(frame)
-            snapshot = SensorState(**{**sensors.__dict__, "t": float(stamp), "image_stamp": float(stamp)})
+            boxes = owl.detect(frame)
+            snapshot = SensorState(**{**sensors.__dict__, "t": float(stamp)})
             detections = detections_from_boxes(boxes, snapshot)
             with lock:
                 if float(stamp) > float(state["detection_t"]):
@@ -254,10 +247,9 @@ def main() -> None:
             publish_invalid(round(float(image_t) * 1.0e6))
             return
         sensors.t = float(image_t)
-        sensors.image_stamp = float(image_t)
-        tick = loop.step(sensors, detections)
-        valid = not _target_missing(actor, len(tick.entities))
-        action = tick.action if valid else (0.0, 0.0)
+        entity_count, action = loop.step(sensors, detections)
+        valid = not _target_missing(actor, entity_count)
+        action = action if valid else (0.0, 0.0)
         message = Input()
         message.stamp_us = int(round(float(image_t) * 1.0e6))
         message.desired_x = float(action[0])

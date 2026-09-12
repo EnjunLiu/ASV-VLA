@@ -1,9 +1,3 @@
-"""Frozen OWL-ViT detector (howto 1.3.1). Weights stay frozen.
-
-Letterbox to 768, recall queries boat/ship/obstacle, rho from the task sentence.
-512-d appearance is OWL text-space class embed, not Qwen.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,68 +7,44 @@ from pathlib import Path
 import numpy as np
 
 OWL_ID = "google/owlvit-base-patch32"
+
+# OWL-ViT 的输入尺寸
 OWL_SIZE = 768
-RECALL_QUERIES = ("boat", "ship", "obstacle")
-# The weakest real T1 boat is ~0.107 in a clean frame and intermittently
-# crosses 0.10 under wave/pose changes.  A 0.05 probe still returns exactly
-# the four boats, so keep recall permissive and let the learned semantic
-# selector reject non-target entities downstream.
+
+# 检测实体类别（OWL-ViT 使用 CLIP 风格文本）
+RECALL_QUERIES = ["a photo of a boat", "a photo of a ship", "a photo of an obstacle"]
+
+# OWL-ViT 检测阈值
 RECALL_THRESH = 0.05
+
+# 重叠阈值
 NMS_IOU = 0.5
+
+# 最多框数
 MAX_DETS = 16
+
+# 从模型内部提取出的图像特征的维度
 APPEAR_DIM = 512
-# NanoOWL boxes on the known Isaac ASV model include water reflections at the
-# lower edge, making bottom-ray range jump badly. Projected box height is much
-# more stable: range[m] * height[px] is approximately 192 on the T1 camera.
+
+# 经验数值，用于测距。距离(米) ≈ 192 / 框高(像素)。
 ISAAC_ASV_HEIGHT_RANGE_SCALE = 192.0
 
+HF_HOME = os.environ.get("OWL_CACHE") or os.environ.get("HF_HOME") or str(
+    Path(__file__).resolve().parents[4] / "models" / "hf"
+)
 
-def default_hf_home() -> str:
-    workspace_cache = Path(__file__).resolve().parents[4] / "models" / "hf"
-    return os.environ.get("OWL_CACHE") or os.environ.get("HF_HOME") or str(workspace_cache)
-
-
-HF_HOME = default_hf_home()
-CLIP_TEMPLATE = "a photo of a {}"
-_TASK_COLORS = ("red", "blue", "white", "yellow", "gray", "grey")
-
-
-def format_recall_query(word: str) -> str:
-    """OWL-ViT is trained on CLIP-style captions; bare 'boat' scores ~0.05 on Isaac RGB."""
-    w = str(word).strip()
-    if w.lower().startswith("a photo of"):
-        return w
-    article = "an" if w[:1].lower() in "aeiou" else "a"
-    return f"a photo of {article} {w}"
-
-
-def format_task_query(task_text: str) -> str:
-    """Command sentences do not fire OWL-ViT. Keep the color noun as the ρ query."""
-    import re
-
-    t = str(task_text).strip()
-    if t.lower().startswith("a photo of"):
-        return t
-    low = t.lower()
-    color = next((c for c in _TASK_COLORS if re.search(rf"\b{c}\b", low)), None)
-    if color is not None:
-        return CLIP_TEMPLATE.format(f"{color} boat")
-    return t
-
-
+# OWL-ViT 检测框
 @dataclass
 class OwlBox:
     cx: float
     cy: float
     w: float
     h: float
-    rho: float
-    score: float
-    appearance: np.ndarray | None = None
+    appearance: np.ndarray | None = None # OWL-ViT 内部提取的 512 维图像特征
 
-
+# 将原始捕获缩放到 OWL-ViT 的输入尺寸
 def letterbox_rgb(rgb: np.ndarray, size: int = OWL_SIZE) -> tuple[np.ndarray, float, int, int]:
-    """Scale so max side == size, pad to square. Returns canvas, scale, pad_x, pad_y."""
+
     from PIL import Image
 
     src = np.asarray(rgb)
@@ -91,7 +61,7 @@ def letterbox_rgb(rgb: np.ndarray, size: int = OWL_SIZE) -> tuple[np.ndarray, fl
     canvas[pad_y : pad_y + nh, pad_x : pad_x + nw] = np.asarray(img)
     return canvas, scale, pad_x, pad_y
 
-
+# 将 OWL-ViT 的输出框映射回原始捕获的尺寸
 def unletterbox_cxcywh(
     cx: float,
     cy: float,
@@ -104,7 +74,6 @@ def unletterbox_cxcywh(
     src_w: int,
     src_h: int,
 ) -> tuple[float, float, float, float]:
-    """Map a box in the padded square back to source pixels."""
     s = float(scale)
     cx_s = (float(cx) - float(pad_x)) / s
     cy_s = (float(cy) - float(pad_y)) / s
@@ -116,7 +85,7 @@ def unletterbox_cxcywh(
     h_s = min(max(h_s, 1.0), float(src_h))
     return cx_s, cy_s, w_s, h_s
 
-
+# 计算两个框的交并比
 def iou_xywh(a, b) -> float:
     ax, ay, aw, ah = a
     bx, by, bw, bh = b
@@ -131,7 +100,7 @@ def iou_xywh(a, b) -> float:
         return 0.0
     return inter / union
 
-
+# 非极大值抑制，用于去除重叠框
 def nms_xywh(boxes: list[tuple[float, float, float, float]], scores: list[float], iou: float = NMS_IOU, cap: int = MAX_DETS) -> list[int]:
     order = sorted(range(len(boxes)), key=lambda i: float(scores[i]), reverse=True)
     keep: list[int] = []
@@ -143,29 +112,8 @@ def nms_xywh(boxes: list[tuple[float, float, float, float]], scores: list[float]
             break
     return keep
 
-
-def range_bucket(r: float | None) -> str | None:
-    """Howto 3.2 distance buckets. None if missing or outside 0–10 m."""
-    if r is None:
-        return None
-    x = float(r)
-    if x < 0.0 or x > 10.0:
-        return None
-    if x < 3.0:
-        return "0-3"
-    if x < 6.0:
-        return "3-6"
-    return "6-10"
-
-
+# 将 OWL-ViT 的输出框转换为 Detection 类型（单帧图像检测结果）
 def owl_to_detections(boxes, *, ego_pos=(0.0, 0.0, 0.0), ego_quat=(1.0, 0.0, 0.0, 0.0), stamp: float = 0.0):
-    """Pixel OWL boxes → body-frame Detection using bearing + box-height range.
-
-    The waterline ray supplies body-frame bearing. Range comes from the known
-    simulated ASV's projected height, avoiding the reflection-sensitive OWL
-    bottom edge. This remains camera perception and never reads bbox_gt or
-    target pose.
-    """
     from .types import Detection
     from .waterline import range_from_bbox
 
@@ -183,29 +131,14 @@ def owl_to_detections(boxes, *, ego_pos=(0.0, 0.0, 0.0), ego_quat=(1.0, 0.0, 0.0
             Detection(
                 x=float(xy[0]),
                 y=float(xy[1]),
-                rho=float(b.rho),
-                appearance=None if b.appearance is None else b.appearance,
+                appearance=b.appearance,
                 stamp=float(stamp),
-                source_stamp=float(stamp),
             )
         )
     return out
 
-
-def owl_weights_present(model_id: str = OWL_ID, cache_dir: str = HF_HOME) -> bool:
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError:
-        return False
-    try:
-        snapshot_download(model_id, cache_dir=cache_dir, local_files_only=True)
-        return True
-    except Exception:
-        return False
-
-
+# 封装的 OWL-ViT 检测器
 class FrozenOwl:
-    """google/owlvit-base-patch32, eval only. Task text is the OWL query, not Qwen."""
 
     def __init__(
         self,
@@ -214,8 +147,6 @@ class FrozenOwl:
         recall_thresh: float = RECALL_THRESH,
         cache_dir: str = HF_HOME,
     ) -> None:
-        import os
-
         os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
         os.environ.setdefault("USE_TF", "0")
         os.environ.setdefault("HF_HOME", cache_dir)
@@ -224,9 +155,6 @@ class FrozenOwl:
 
         self.device = torch.device(device)
         self.recall_thresh = float(recall_thresh)
-        # Runtime inference must remain available when the workstation or
-        # Jetson has no Internet.  Installation populates HF_HOME once;
-        # collection/deployment only read that pinned local snapshot.
         self.processor = OwlViTProcessor.from_pretrained(
             model_id, cache_dir=cache_dir, local_files_only=True
         )
@@ -234,28 +162,20 @@ class FrozenOwl:
             model_id, cache_dir=cache_dir, local_files_only=True
         )
         self.model.to(self.device)
-        # Jetson shares system RAM with CUDA. FP16 cuts the frozen detector's
-        # resident and activation memory while leaving CPU inference FP32.
         self.model_dtype = torch.float16 if self.device.type == "cuda" else torch.float32
         if self.model_dtype == torch.float16:
             self.model.half()
         self.model.eval()
         for p in self.model.parameters():
             p.requires_grad_(False)
-        self._task = ""
 
-    def detect(self, rgb: np.ndarray, task_text: str | None) -> list[OwlBox]:
+    def detect(self, rgb: np.ndarray) -> list[OwlBox]:
         import torch
 
         src = np.asarray(rgb)
         src_h, src_w = int(src.shape[0]), int(src.shape[1])
         canvas, scale, pad_x, pad_y = letterbox_rgb(src, OWL_SIZE)
-        queries = [format_recall_query(q) for q in RECALL_QUERIES]
-        has_task_query = bool(str(task_text or "").strip())
-        if has_task_query:
-            queries.append(format_task_query(str(task_text)))
-        texts = [queries]
-        inputs = self.processor(text=texts, images=canvas, return_tensors="pt", do_resize=False)
+        inputs = self.processor(text=[RECALL_QUERIES], images=canvas, return_tensors="pt", do_resize=False)
         inputs = {
             k: (
                 v.to(self.device, dtype=self.model_dtype)
@@ -273,13 +193,10 @@ class FrozenOwl:
         appear = None
         if hasattr(out, "class_embeds") and out.class_embeds is not None:
             appear = out.class_embeds[0].float().cpu().numpy()
-        n_recall = len(RECALL_QUERIES)
         scores = 1.0 / (1.0 + np.exp(-np.clip(logits, -30.0, 30.0)))
-        recall = scores[:, :n_recall].max(axis=1)
-        rho = scores[:, n_recall] if has_task_query else np.zeros(scores.shape[0], dtype=np.float64)
+        recall = scores.max(axis=1)
         raw_boxes: list[tuple[float, float, float, float]] = []
         raw_score: list[float] = []
-        raw_rho: list[float] = []
         raw_app: list[np.ndarray | None] = []
         for i, r in enumerate(recall):
             if float(r) < self.recall_thresh:
@@ -287,7 +204,6 @@ class FrozenOwl:
             cx, cy, bw, bh = pred[i]
             raw_boxes.append((float(cx) * OWL_SIZE, float(cy) * OWL_SIZE, float(bw) * OWL_SIZE, float(bh) * OWL_SIZE))
             raw_score.append(float(r))
-            raw_rho.append(float(np.clip(rho[i], 0.0, 1.0)))
             if appear is not None:
                 vec = np.asarray(appear[i], dtype=np.float64).reshape(-1)
                 if vec.size >= APPEAR_DIM:
@@ -313,13 +229,7 @@ class FrozenOwl:
                     cy=cy,
                     w=bw,
                     h=bh,
-                    rho=raw_rho[i],
-                    score=raw_score[i],
                     appearance=raw_app[i],
                 )
             )
         return boxes
-
-    def detect_entities(self, rgb: np.ndarray) -> list[OwlBox]:
-        """Task-independent open-vocabulary recall for semantic entity encoding."""
-        return self.detect(rgb, None)

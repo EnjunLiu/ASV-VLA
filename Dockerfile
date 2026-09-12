@@ -68,13 +68,11 @@ RUN python3 -m pip install --timeout 1000 --retries 20 --only-binary=:all: regex
 RUN python3 -m pip install --timeout 1000 --retries 20 -r /tmp/requirements-container.txt
 RUN python3 - <<'PY'
 import cv2
-import sentence_transformers
 import torch
 import transformers
 
 print("container torch", torch.__version__, "cuda", torch.version.cuda)
 print("container transformers", transformers.__version__)
-print("container sentence-transformers", sentence_transformers.__version__)
 print("container opencv", cv2.__version__)
 PY
 
